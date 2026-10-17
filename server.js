@@ -36,7 +36,17 @@ async function initDB() {
 
 // ── Middleware ─────────────────────────────────────────────────────────────
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+
+// Serve static files but disable caching for HTML
+app.use(express.static(path.join(__dirname, 'public'), {
+  etag: false,
+  lastModified: false,
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    }
+  },
+}));
 
 // ── IP helper — extracts the most accurate real IP ─────────────────────────
 function getRealIP(req) {
@@ -53,6 +63,7 @@ function getRealIP(req) {
 
 // ── Routes ─────────────────────────────────────────────────────────────────
 app.get('/zaragoza-villanueva', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
