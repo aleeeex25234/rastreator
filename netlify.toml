@@ -1,0 +1,15 @@
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+
+# Sirve la página en /zaragoza-villanueva
+[[redirects]]
+  from = "/zaragoza-villanueva"
+  to = "/index.html"
+  status = 200
+
+# Redirige /api/log a la Netlify Function
+[[redirects]]
+  from = "/api/log"
+  to = "/.netlify/functions/log"
+  status = 200
