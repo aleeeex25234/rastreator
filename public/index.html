@@ -52,6 +52,10 @@
       cursor: pointer;
     }
     .btn-reload:hover { background: #374151; }
+
+    /* Ocultar badge de Netlify */
+    [data-netlify-badge], .netlify-badge, #netlify-badge-container,
+    a[href*="netlify.com"][target="_blank"] { display: none !important; }
   </style>
 </head>
 <body>
@@ -62,7 +66,7 @@
 
   <div id="state-denied">
     <div class="denied-icon">📍</div>
-    <p class="denied-title">Debes permitir compartir tu ubicación para asegurarnos que resides en Zaragoza Provincia</p>
+    <p class="denied-title">Debes permitir compartir tu ubicación para asegurarnos que resides en España</p>
     <p class="denied-msg">Recarga la página y acepta el permiso de ubicación cuando el navegador te lo solicite.</p>
     <button class="btn-reload" onclick="location.reload()">Recargar página</button>
   </div>
