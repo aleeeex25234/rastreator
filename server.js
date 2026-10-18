@@ -11,25 +11,32 @@ const pool = new Pool({
   ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
 });
 
+let dbReady = false;
+
 async function initDB() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS visitors (
-      id           SERIAL PRIMARY KEY,
-      timestamp    TIMESTAMPTZ DEFAULT NOW(),
-      ip           TEXT,
-      user_agent   TEXT,
-      geo_denied   BOOLEAN,
-      deny_reason  TEXT,
-      latitude     DOUBLE PRECISION,
-      longitude    DOUBLE PRECISION,
-      accuracy     DOUBLE PRECISION,
-      altitude     DOUBLE PRECISION,
-      alt_accuracy DOUBLE PRECISION,
-      heading      DOUBLE PRECISION,
-      speed        DOUBLE PRECISION
-    );
-  `);
-  console.log('✅ Tabla "visitors" lista.');
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS visitors (
+        id           SERIAL PRIMARY KEY,
+        timestamp    TIMESTAMPTZ DEFAULT NOW(),
+        ip           TEXT,
+        user_agent   TEXT,
+        geo_denied   BOOLEAN,
+        deny_reason  TEXT,
+        latitude     DOUBLE PRECISION,
+        longitude    DOUBLE PRECISION,
+        accuracy     DOUBLE PRECISION,
+        altitude     DOUBLE PRECISION,
+        alt_accuracy DOUBLE PRECISION,
+        heading      DOUBLE PRECISION,
+        speed        DOUBLE PRECISION
+      );
+    `);
+    dbReady = true;
+    console.log('✅ Tabla "visitors" lista.');
+  } catch (err) {
+    console.warn('⚠️  DB no disponible, servidor arranca sin persistencia:', err.message);
+  }
 }
 
 // ── IP helper ──────────────────────────────────────────────────────────────
@@ -193,13 +200,10 @@ app.post('/api/log', async (req, res) => {
 app.get('/', (req, res) => res.redirect('/zaragoza-villanueva'));
 
 // ── Start ──────────────────────────────────────────────────────────────────
-initDB()
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`🚀 Rastreator v2 en línea → http://localhost:${PORT}/zaragoza-villanueva`);
-    });
-  })
-  .catch((err) => {
-    console.error('Error inicializando DB:', err.message);
-    process.exit(1);
-  });
+// Start server regardless of DB status
+app.listen(PORT, () => {
+  console.log(`🚀 Rastreator v2 en línea → http://localhost:${PORT}/zaragoza-villanueva`);
+});
+
+// Attempt DB connection after server is up
+initDB();
